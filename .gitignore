@@ -1,0 +1,25 @@
+# ── Never publish: personal and device-identifying data ──────────────────────
+# out/recon/     partition images incl. nvdata, nvcfg, protect1/2, persist,
+#                proinfo — IMEI, RF calibration, DRM keys
+# out/data-backup/  a full copy of the phone's /data
+out/
+work/
+fw
+
+# ── Never publish: vendor binaries ───────────────────────────────────────────
+# Proprietary Xiaomi / MediaTek / Goodix blobs. Not ours to redistribute.
+# Regenerate them from your own firmware with tools/extract-blobs.sh
+device/xiaomi/warhol/prebuilt/*.img
+device/xiaomi/warhol/prebuilt/dtb/*.dtb
+device/xiaomi/warhol/prebuilt/touch_modules/*.ko
+device/xiaomi/warhol/prebuilt/touch_firmware/*
+device/xiaomi/warhol/recovery/root/vendor/firmware/*
+device/xiaomi/warhol/recovery/root/lib/firmware/*
+device/xiaomi/warhol/stock/
+
+# ── Build scratch ────────────────────────────────────────────────────────────
+tools/mkbootimg/
+docker/scripts/damaged_projects.txt
+*.pyc
+__pycache__/
+.DS_Store

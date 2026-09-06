@@ -1,0 +1,89 @@
+# init.recovery.mt6993.rc — Xiaomi 17T Pro (warhol)
+#
+# Loaded by init because ro.hardware=mt6993 (set from the base DTB bootargs
+# `androidboot.hardware=mt6993`). Recovery-only: this file lives in the
+# vendor_boot "recovery" ramdisk fragment and is never read on a normal HyperOS
+# boot, so nothing here can affect the stock OS.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. USB gadget controller
+#    stock init.recovery.mt6993.rc sets exactly these two. Without them the
+#    gadget has no UDC to bind and adb/MTP never enumerate.
+# ─────────────────────────────────────────────────────────────────────────────
+on init
+    setprop sys.usb.configfs 1
+    setprop sys.usb.controller "16751000.usb0"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. DUAL-UFS userdata  ← warhol-specific, absent from degas/chagall
+#
+#    warhol ships two UFS dies. /data is a dm-stripe over userdata_stripe_0 (LU2)
+#    + userdata_stripe_1 (LU0), plus a linear userdata_rem tail, assembled by
+#    /system/bin/userdata_setup into /dev/block/mapper/mtk_userdata. Stock does
+#    exactly this, then symlinks it over by-name/userdata.
+#
+#    On a single-UFS unit userdata_setup is a no-op and the symlink fails with
+#    EEXIST (a real by-name/userdata already exists) — which is why stock does it
+#    unconditionally too. Do NOT remove this: without it /data is invisible, and
+#    a wipe would land on only one of the two stripes.
+# ─────────────────────────────────────────────────────────────────────────────
+on fs
+    exec u:r:recovery:s0 root root -- /system/bin/userdata_setup
+    symlink /dev/block/mapper/mtk_userdata /dev/block/by-name/userdata
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. MTK block-device path symlinks
+#    stock runs this in `on boot`; it populates /dev/block/platform/... which
+#    some TWRP paths still expect.
+# ─────────────────────────────────────────────────────────────────────────────
+on boot
+    exec u:r:update_engine:s0 root root -- /system/bin/mtk_plpath_utils
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Touch — Goodix GT9895 in THP mode
+#
+#    The panel is THP: the kernel driver normally only ships raw capacitance
+#    frames and a userspace HAL (vendor.xiaomi.hw.touchfeature-service +
+#    libtouchreport_alg + tflite, all on odm) computes the finger coordinates.
+#    None of that exists in a standalone TWRP, so touch is dead by default.
+#
+#    Two knobs, applied together (this is the proven degas/chagall combination):
+#      a) enable_touch_raw 0  — ask the Xiaomi touch framework to leave raw/THP
+#         mode so the kernel driver reports input events itself.
+#      b) the 8-byte patch to xiaomi_touch_warhol.ko applied by
+#         patch_touch_warhol.sh, which neuters xiaomi_drm_panel_notifier_callback
+#         so the display driver cannot switch the IC back into THP/doze mode.
+#
+#    panel_display "U" tells the framework the panel is up (primary/unfolded).
+#
+#    If this does not produce input events, fall back to running the stock THP
+#    HAL inside recovery — see recovery_userspace/ (ported from chagall).
+# ─────────────────────────────────────────────────────────────────────────────
+on early-init
+    write /sys/class/touch/touch_dev/enable_touch_raw 0
+
+on boot
+    write /sys/class/touch/touch_dev/enable_touch_raw 0
+    write /sys/class/touch/touch_dev/panel_display "U"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. MTP over ConfigFS
+#    TWRP's own init.rc creates the g1 gadget and the ffs.adb function but has no
+#    trigger for the mtp,adb combination, so enabling MTP would leave the UDC
+#    unbound. Create ffs.mtp and bind both once TWRP's twrpmtp-ffs daemon has
+#    written its descriptors (sys.usb.ffs.mtp.ready=1).
+# ─────────────────────────────────────────────────────────────────────────────
+on fs && property:sys.usb.configfs=1
+    mkdir /config/usb_gadget/g1/functions/ffs.mtp
+    mkdir /dev/usb-ffs/mtp 0770 shell shell
+    # NB (degas): this kernel's functionfs rejects the `dmode` option; keep the
+    # option set identical to the one adb uses.
+    mount functionfs mtp /dev/usb-ffs/mtp uid=2000,gid=2000
+
+on property:sys.usb.config=mtp,adb && property:sys.usb.ffs.ready=1 && property:sys.usb.ffs.mtp.ready=1 && property:sys.usb.configfs=1
+    write /config/usb_gadget/g1/idProduct 0x4EE2
+    write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "mtp,adb"
+    symlink /config/usb_gadget/g1/functions/ffs.mtp /config/usb_gadget/g1/configs/b.1/f1
+    symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f2
+    write /config/usb_gadget/g1/UDC ${sys.usb.controller}
+    setprop sys.usb.state ${sys.usb.config}

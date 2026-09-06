@@ -1,0 +1,110 @@
+# recovery.fstab — Xiaomi 17T Pro (warhol / mt6993)
+#
+# Derived from the stock recovery.fstab and fstab.raid shipped in
+# vendor_boot.img's "recovery" ramdisk fragment
+# (OS3.0.310.0.WPSMIXM). Device-specific addresses below were read out of the
+# stock vendor_boot DTB, not copied from another device:
+#   UFS host controllers : ufshci@16810000 (LU2) and ufshci@16890000 (LU1/LU0)
+#   SD/MMC               : 16310000.mmc
+#   USB xHCI (OTG)       : 6 controllers, see the bottom of this file
+#
+# !! warhol-specific: this is a DUAL-UFS device. /data is not a plain partition —
+# it is a dm-stripe over userdata_stripe_0 (LU2) + userdata_stripe_1 (LU0) with a
+# linear userdata_rem tail, assembled at boot by /system/bin/userdata_setup into
+# /dev/block/mapper/mtk_userdata, which is then symlinked to by-name/userdata.
+# init.recovery.mt6993.rc MUST run userdata_setup before anything touches /data.
+# Single-UFS units keep a real by-name/userdata and the symlink harmlessly fails.
+
+# ── Logical partitions in super (erofs primary, ext4 fallback) ───────────────
+system       /system       erofs  ro  wait,slotselect,logical,first_stage_mount
+system       /system       ext4   ro  wait,slotselect,logical,first_stage_mount
+system_ext   /system_ext   erofs  ro  wait,slotselect,logical,first_stage_mount
+system_ext   /system_ext   ext4   ro  wait,slotselect,logical,first_stage_mount
+vendor       /vendor       erofs  ro  wait,slotselect,logical,first_stage_mount
+vendor       /vendor       ext4   ro  wait,slotselect,logical,first_stage_mount
+product      /product      erofs  ro  wait,slotselect,logical,first_stage_mount
+product      /product      ext4   ro  wait,slotselect,logical,first_stage_mount
+odm          /odm          erofs  ro  wait,slotselect,logical,first_stage_mount
+odm          /odm          ext4   ro  wait,slotselect,logical,first_stage_mount
+vendor_dlkm  /vendor_dlkm  erofs  ro  wait,slotselect,logical,first_stage_mount
+vendor_dlkm  /vendor_dlkm  ext4   ro  wait,slotselect,logical,first_stage_mount
+odm_dlkm     /odm_dlkm     erofs  ro  wait,slotselect,logical,first_stage_mount
+odm_dlkm     /odm_dlkm     ext4   ro  wait,slotselect,logical,first_stage_mount
+system_dlkm  /system_dlkm  erofs  ro  wait,slotselect,logical,first_stage_mount
+system_dlkm  /system_dlkm  ext4   ro  wait,slotselect,logical,first_stage_mount
+
+# mi_ext — Xiaomi's overlay partition. Stock mounts it at /mnt/vendor/mi_ext and
+# bind-mounts /mi_ext; recovery only needs the direct mount.
+mi_ext       /mi_ext       erofs  ro  wait,slotselect,logical,first_stage_mount
+mi_ext       /mi_ext       ext4   ro  wait,slotselect,logical,first_stage_mount
+
+# ── userdata ─────────────────────────────────────────────────────────────────
+# Flags copied verbatim from the stock fstab.raid (the dual-UFS variant), which is
+# what this device uses. FBE + metadata encryption (dm-default-key) means TWRP will
+# see this as encrypted; backup=0 because a raw backup of an encrypted 12 GB+
+# volume is not useful. See docs/ENCRYPTION.md.
+/dev/block/by-name/userdata /data f2fs noatime,nosuid,nodev,discard,noflush_merge,fsync_mode=nobarrier,reserve_root=134217,resgid=1065,alloc_mode=reuse,inlinecrypt wait,check,formattable,quota,latemount,resize,reservedsize=128m,checkpoint=fs,fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized,keydirectory=/metadata/vold/metadata_encryption,fsverity,sysfs_path=/sys/devices/platform/soc/16810000.ufshci;flags=display="Data (encrypted)";backup=0;wipeingui;canbewiped
+
+# metadata — holds the dm-default-key metadata. Wiping this makes /data unreadable
+# even to stock HyperOS, so it is deliberately NOT exposed to the wipe UI.
+/dev/block/by-name/metadata /metadata f2fs noatime,nosuid,nodev,discard wait,check,formattable,first_stage_mount;flags=display="Metadata";backup=0
+
+# cache lives on the `rescue` partition on this device (128 MiB, ext4)
+/dev/block/by-name/rescue /cache ext4 noatime,nosuid,nodev,noauto_da_alloc,discard wait,check,formattable;flags=display="Cache"
+
+# ── MTK / Xiaomi vendor data partitions ─────────────────────────────────────
+# These carry IMEI, RF calibration, sensor calibration and DRM keys. They are
+# formattable in the stock fstab; here they are backup=1 and NOT wipeable, because
+# losing them bricks radio/camera calibration irreversibly.
+/dev/block/by-name/persist  /mnt/vendor/persist   ext4 noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc wait,check;flags=display="Persist";backup=1
+/dev/block/by-name/nvdata   /mnt/vendor/nvdata    ext4 noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc wait,check;flags=display="NVdata";backup=1
+/dev/block/by-name/nvcfg    /mnt/vendor/nvcfg     ext4 noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc wait,check;flags=display="NVcfg";backup=1
+/dev/block/by-name/protect1 /mnt/vendor/protect_f ext4 noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc wait,check;flags=display="Protect F";backup=1
+/dev/block/by-name/protect2 /mnt/vendor/protect_s ext4 noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc wait,check;flags=display="Protect S";backup=1
+/dev/block/by-name/md_sec   /mnt/vendor/md_sec    ext4 noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc wait,check;flags=display="MD Sec";backup=1
+
+# nvram is a raw partition (not a filesystem) — image backup only.
+/dev/block/by-name/nvram    /nvram    emmc defaults defaults;flags=display="NVRAM";backup=1;flashimg=1
+/dev/block/by-name/proinfo  /proinfo  emmc defaults defaults;flags=display="Proinfo";backup=1;flashimg=1
+
+# misc — bootloader_control (A/B slot) lives here; TWRP writes it directly.
+/dev/block/by-name/misc /misc emmc defaults defaults
+
+# ── Physical partitions — raw image backup / restore ─────────────────────────
+# !! SLOT B. Verified on the actual device 2026-09-06 via fastboot:
+#       current-slot: b        slot-successful:b: yes
+#                              slot-successful:a: no    slot-retry-count:a: 0
+#    This unit runs from slot B, and slot A has never booted successfully and has
+#    zero retries left. An earlier draft of this file pinned _a throughout (copied
+#    from the OTA, whose flash_all.sh ends with `set_active a`) — that was WRONG
+#    for this device and would have made TWRP back up and restore the dead slot.
+#
+# NOTE (carried from degas/chagall): this TWRP base does not append the slot suffix
+# for `slotselect` on by-name nodes that have no unsuffixed symlink, which is why
+# the slot is pinned literally rather than left to slotselect.
+# TODO(device): `ls -l /dev/block/by-name` in the first booted TWRP — if unsuffixed
+# symlinks exist (boot -> boot_b etc.), switch these to the bare name + slotselect
+# so the fstab stops being slot-specific.
+/dev/block/by-name/boot_b          /boot          emmc defaults defaults;flags=display="Boot";backup=1;flashimg=1
+/dev/block/by-name/init_boot_b     /init_boot     emmc defaults defaults;flags=display="Init Boot";backup=1;flashimg=1
+/dev/block/by-name/vendor_boot_b   /vendor_boot   emmc defaults defaults;flags=display="Vendor Boot";backup=1;flashimg=1
+/dev/block/by-name/dtbo_b          /dtbo          emmc defaults defaults;flags=display="DTBO";backup=1;flashimg=1
+/dev/block/by-name/vbmeta_b        /vbmeta        emmc defaults defaults;flags=display="Vbmeta";backup=1;flashimg=1
+/dev/block/by-name/vbmeta_system_b /vbmeta_system emmc defaults defaults;flags=display="Vbmeta System";backup=1;flashimg=1
+/dev/block/by-name/vbmeta_vendor_b /vbmeta_vendor emmc defaults defaults;flags=display="Vbmeta Vendor";backup=1;flashimg=1
+/dev/block/by-name/super           /super         emmc defaults defaults;flags=display="Super";backup=1
+
+# ── Removable / OTG ─────────────────────────────────────────────────────────
+# stock fstab lists 16310000.mmc for sdcard1. The 17T Pro has no microSD slot;
+# kept because it is harmless and matches stock.
+/devices/platform/soc/16310000.mmc* auto auto defaults voldmanaged=sdcard1:auto,encryptable=userdata
+
+# USB OTG — all six xHCI controllers from the stock fstab. The gadget/UDC used for
+# adb+MTP is 16751000.usb0 (see init.recovery.mt6993.rc).
+/devices/platform/usb_xhci* auto vfat defaults voldmanaged=usbotg:auto
+/devices/platform/soc/11201000.usb0/11200000.xhci* auto vfat defaults voldmanaged=usbotg:auto
+/devices/platform/soc/11211000.usb1/11210000.xhci* auto vfat defaults voldmanaged=usbotg:auto
+/devices/platform/soc/16701000.usb0/16700000.xhci* auto vfat defaults voldmanaged=usbotg:auto
+/devices/platform/soc/16711000.usb1/16710000.xhci* auto vfat defaults voldmanaged=usbotg:auto
+/devices/platform/soc/16721000.usb2/16720000.xhci* auto vfat defaults voldmanaged=usbotg:auto
+/devices/platform/soc/16751000.usb0/16750000.xhci* auto vfat defaults voldmanaged=usbotg:auto
