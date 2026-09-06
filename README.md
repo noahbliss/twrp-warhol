@@ -152,6 +152,13 @@ docs/                    reference
 related device — partition layout, the dual-UFS `/data` handling, and how the
 touch stack fits together.
 
+## LineageOS
+
+Work toward LineageOS 23 for this device lives in a separate repository:
+**[android_device_xiaomi_warhol](https://github.com/noahbliss/android_device_xiaomi_warhol)**.
+The device reference in [`docs/`](docs/) — partition layout, HAL inventory,
+encryption, GApps planning — applies to both.
+
 ## Credits
 
 * **[Advnirr](https://github.com/Advnirr)** — the
